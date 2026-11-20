@@ -1,0 +1,140 @@
+// 1. Khai báo đích đến là container Loki
+loki.write "local_loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// 2. Thu thập log hệ thống Linux (/var/log)
+local.file_match "system_logs" {
+  path_targets = [{
+    "__path__"    = "/var/log/*.log",
+    "job"         = "varlogs",
+    "device_type" = "server",
+    "source"      = "linux",
+    "host"        = "main-server", // Đặt trùng Host name trên Zabbix
+  }]
+}
+
+loki.source.file "system_scrape" {
+  targets    = local.file_match.system_logs.targets
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+// 3. Tự động phát hiện và thu thập log của toàn bộ Docker Containers
+discovery.docker "linux" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "logs_integrations_docker" {
+  targets = []
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container_name"
+  }
+}
+
+loki.source.docker "default" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.linux.targets
+  labels        = {
+    "job"         = "docker",
+    "device_type" = "server",
+    "source"      = "docker",
+    "host"        = "main-server", // Đặt trùng Host name trên Zabbix
+  }
+  relabel_rules = discovery.relabel.logs_integrations_docker.rules
+  forward_to    = [loki.write.local_loki.receiver]
+}
+
+// 4. Lắng nghe Syslog từ thiết bị mạng (Cisco 514, FortiGate 1514)
+loki.source.syslog "network_devices" {
+  // Cổng 514: Cisco (UDP)
+  listener {
+    address       = "0.0.0.0:514"
+    protocol      = "udp"
+    syslog_format = "raw"
+    labels        = { job = "syslog", device_type = "network", source = "cisco" }
+  }
+  // Cổng 514: Cisco (TCP)
+  listener {
+    address       = "0.0.0.0:514"
+    protocol      = "tcp"
+    syslog_format = "raw"
+    labels        = { job = "syslog", device_type = "network", source = "cisco" }
+  }
+  // Cổng 1514: FortiGate (UDP - mặc định RFC5424)
+  listener {
+    address  = "0.0.0.0:1514"
+    protocol = "udp"
+    //syslog_format = "rfc5424"
+    labels   = { job = "syslog", device_type = "network", source = "fortigate" }
+  }
+  // Cổng 1514: FortiGate (TCP - mặc định RFC5424)
+  listener {
+    address  = "0.0.0.0:1514"
+    protocol = "tcp"
+    //syslog_format = "rfc5424"
+    labels   = { job = "syslog", device_type = "network", source = "fortigate" }
+  }
+
+  relabel_rules = loki.relabel.syslog_labels.rules
+  forward_to    = [loki.process.syslog_pipeline.receiver]
+}
+
+// Chuẩn hóa label từ Syslog: luôn có device_ip và host (ưu tiên hostname từ syslog, fallback về device_ip)
+loki.relabel "syslog_labels" {
+  forward_to = []
+
+  // Lưu IP nguồn thực tế của thiết bị mạng
+  rule {
+    source_labels = ["__syslog_connection_ip_address"]
+    target_label  = "device_ip"
+  }
+
+  // Fallback mặc định: gắn host = device_ip để label host không bao giờ bị rỗng
+  rule {
+    source_labels = ["__syslog_connection_ip_address"]
+    target_label  = "host"
+  }
+
+  // Nếu gói syslog có sẵn hostname (RFC3164/RFC5424), tự động ghi đè vào label host
+  rule {
+    source_labels = ["__syslog_message_hostname"]
+    regex         = "(.+)"
+    target_label  = "host"
+    replacement   = "$1"
+  }
+
+  // (Tùy chọn) Map thủ công IP -> Zabbix Host name nếu thiết bị không gửi hostname (VD: Cisco raw)
+  // Bỏ comment và sửa IP / tên Host theo Zabbix của bạn:
+  // rule {
+  //   source_labels = ["device_ip"]
+  //   regex         = "192\\.168\\.2\\.34"
+  //   target_label  = "host"
+  //   replacement   = "SW-Cisco-2960"
+  // }
+}
+
+// Trích xuất thêm thông tin từ nội dung log (FortiGate devname, level)
+loki.process "syslog_pipeline" {
+  stage.match {
+    selector = "{source=\"fortigate\"}"
+
+    stage.regex {
+      expression = "devname=\"?(?P<fg_host>[^\"\\s]+)\"?"
+    }
+    stage.regex {
+      expression = "level=\"?(?P<level>[^\"\\s]+)\"?"
+    }
+    stage.labels {
+      values = {
+        host  = "fg_host",
+        level = "level",
+      }
+    }
+  }
+
+  forward_to = [loki.write.local_loki.receiver]
+}
