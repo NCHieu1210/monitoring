@@ -49,7 +49,7 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD='Home!23$'
+      - GF_SECURITY_ADMIN_PASSWORD=Home!23$
       # Tự động cài sẵn Zabbix Plugin khi khởi động
       # - GF_INSTALL_PLUGINS=alexanderzobnin-zabbix-app
     volumes:
