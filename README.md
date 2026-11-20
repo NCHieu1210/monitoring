@@ -26,7 +26,7 @@ monitoring/
 ├── loki/
 │   └── loki-config.yaml    # Cấu hình lưu trữ & retention cho Loki
 ├── docker-compose.yml      # Khai báo toàn bộ các container, volume và network
-├── install-docker.sh       # Script tự động cài Docker và khởi chạy stack trên Ubuntu Server
+├── run-docker.sh       # Script tự động cài Docker và khởi chạy stack trên Ubuntu Server
 └── README.md
 ```
 
@@ -42,7 +42,7 @@ monitoring/
 
 ## 4. Hướng dẫn cài đặt nhanh
 
-Script `install-docker.sh` sẽ tự động kiểm tra lỗi theo từng bước (dừng ngay nếu có bước thất bại):
+Script `run-docker.sh` sẽ tự động kiểm tra lỗi theo từng bước (dừng ngay nếu có bước thất bại):
 1. Kiểm tra môi trường Ubuntu Server, quyền `sudo` và sự tồn tại của `docker-compose.yml`.
 2. Gỡ bỏ các gói Docker cũ/xung đột (nếu có).
 3. Cập nhật APT và cài đặt `ca-certificates`, `curl`.
@@ -55,8 +55,8 @@ Script `install-docker.sh` sẽ tự động kiểm tra lỗi theo từng bướ
 ### Các bước thực hiện
 
 ```bash
-chmod +x install-docker.sh
-./install-docker.sh
+chmod +x run-docker.sh
+./run-docker.sh
 ```
 
 > **Lưu ý:** Nếu bạn chạy script bằng user thường (không phải `root`), hãy đăng xuất và đăng nhập lại (hoặc chạy `newgrp docker`) sau khi cài xong để sử dụng lệnh `docker` mà không cần `sudo`.
